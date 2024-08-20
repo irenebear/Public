@@ -1,0 +1,74 @@
+name: Build Custom Image
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gawk wget git diffstat unzip texinfo gcc build-essential chrpath socat cpio python3 python3-pip python3-pexpect xz-utils debianutils iputils-ping python3-git python3-jinja2 libegl1-mesa libsdl1.2-dev pylint xterm python3-subunit mesa-common-dev zstd liblz4-tool
+
+      - name: Clone meta-iot2050
+        run: |
+          git clone https://github.com/siemens/meta-iot2050.git
+          cd meta-iot2050
+          git checkout V01.03.01
+
+      - name: Set up build environment
+        run: |
+          source meta-iot2050/kas-iot2050.yml
+          bitbake-layers create-layer meta-custom
+
+      - name: Add open62541 recipe
+        run: |
+          cat << EOF > meta-custom/recipes-connectivity/open62541/open62541_1.4.4.bb
+          SUMMARY = "Open source implementation of OPC UA"
+          HOMEPAGE = "https://open62541.org/"
+          LICENSE = "MPL-2.0"
+          LIC_FILES_CHKSUM = "file://LICENSE;md5=815ca599c9df247a0c7f619bab123dad"
+
+          SRC_URI = "git://github.com/open62541/open62541.git;protocol=https;branch=master;tag=v1.4.4"
+
+          S = "\${WORKDIR}/git"
+
+          inherit cmake
+
+          EXTRA_OECMAKE += "-DBUILD_SHARED_LIBS=ON"
+
+          do_install() {
+              install -d \${D}\${libdir}
+              install -m 0644 \${B}/bin/libopen62541.so \${D}\${libdir}
+              install -d \${D}\${includedir}
+              cp -R \${S}/include/* \${D}\${includedir}
+          }
+
+          FILES_\${PN} += "\${libdir}/libopen62541.so"
+          FILES_\${PN}-dev += "\${includedir}/*"
+          EOF
+
+      - name: Create custom image recipe
+        run: |
+          cat << EOF > meta-custom/recipes-core/images/custom-image.bb
+          require recipes-core/images/iot2050-image-example.bb
+
+          IMAGE_INSTALL += "open62541"
+          EOF
+
+      - name: Build custom image
+        run: |
+          bitbake custom-image
+
+      - name: Archive artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: custom-image
+          path: tmp/deploy/images/iot2050/custom-image-iot2050.wic.gz
