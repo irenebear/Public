@@ -25,7 +25,7 @@ jobs:
 
       - name: Set up build environment
         run: |
-          source meta-iot2050/kas-iot2050-example.yml
+          source meta-iot2050/kas/iot2050.yml
           bitbake-layers create-layer meta-custom
 
       - name: Add open62541 recipe
